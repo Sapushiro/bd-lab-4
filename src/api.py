@@ -80,7 +80,7 @@ def predict(
 
     message = {
         **features_data,
-        "predictions": predicted_class,
+        "prediction": predicted_class,
         "label": label,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
