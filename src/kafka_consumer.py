@@ -5,6 +5,9 @@ import logging
 from kafka import KafkaConsumer
 from src.database import Database
 
+from kafka.errors import KafkaError
+from sqlalchemy.exc import SQLAlchemyError
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -51,23 +54,33 @@ class PredictionConsumer:
 
                 try:
                     prediction_id = self.process_message(record.value)
-                    self.consumer.commit()
 
-                    logger.info(
-                        "Prediction saved: id=%s, "
-                        "partition=%s, offset=%s",
-                        prediction_id,
-                        record.partition,
-                        record.offset
-                    )
                 except (KeyError, TypeError, ValueError):
                     logger.exception("Invalid prediction message: %s", record.value)
                     self.consumer.commit()
-                except Exception:
+                    continue
+
+                except SQLAlchemyError:
                     logger.exception(
-                        "Could not save prediction. "
+                        "Could not save prediction to database. "
                         "Offset will not be committed."
                     )
+                    raise
+
+                try:
+                    self.consumer.commit()
+                except KafkaError:
+                    logger.exception(
+                        "Prediction was saved, but Kafka offset could not be commited."
+                    )
+                    raise
+
+                logger.info("Prediction saved: id=%s, "
+                            "partition=%s, offset=%s",
+                            prediction_id,
+                            record.partition,
+                            record.offset
+                )
         finally:
             self.consumer.close()
             logger.info("Consumer stopped")

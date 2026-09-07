@@ -1,6 +1,7 @@
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, MagicMock
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.kafka_consumer import PredictionConsumer
 
@@ -84,9 +85,11 @@ class TestPredictionConsumer(unittest.TestCase):
 
         self.prediction_consumer.consumer.__iter__.return_value = iter([record])
 
-        self.prediction_consumer.database.save_prediction.side_effect = RuntimeError("Database is unavailable")
+        self.prediction_consumer.database.save_prediction.side_effect = SQLAlchemyError("Database is unavailable")
 
-        self.prediction_consumer.run()
+        with self.assertRaises(SQLAlchemyError):
+            self.prediction_consumer.run()
+
         self.prediction_consumer.consumer.commit.assert_not_called()
         self.prediction_consumer.consumer.close.assert_called_once_with()
 
