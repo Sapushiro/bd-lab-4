@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
 
-from src.api import app, get_database, get_predictor
+from src.api import app, get_database, get_predictor, get_producer
 
 
 class TestApiDatabase(unittest.TestCase):
@@ -13,16 +13,18 @@ class TestApiDatabase(unittest.TestCase):
     def setUp(self) -> None:
         self.predictor = Mock()
         self.database = Mock()
+        self.producer = Mock()
 
         app.dependency_overrides[get_predictor] = lambda: self.predictor
         app.dependency_overrides[get_database] = lambda: self.database
+        app.dependency_overrides[get_producer] = lambda: self.producer
 
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
 
-    def test_predict_saves_result_to_database(self) -> None:
+    def test_predict_saves_result_to_kafka(self) -> None:
         features = {
             "variance": 3.6216,
             "skewness": 8.6661,
@@ -31,7 +33,6 @@ class TestApiDatabase(unittest.TestCase):
         }
 
         self.predictor.predict.return_value = 0
-        self.database.save_prediction.return_value = 1
 
         response = self.client.post(
             "/predict",
@@ -50,11 +51,21 @@ class TestApiDatabase(unittest.TestCase):
         self.predictor.predict.assert_called_once_with(
             features
         )
-        self.database.save_prediction.assert_called_once_with(
-            features=features,
-            prediction=0,
-            label="authentic",
-        )
+        self.producer.send_prediction.assert_called_once()
+        sent_message = self.producer.send_prediction.call_args.args[0]
+
+        expected_message_without_time = {
+            **features,
+            "prediction": 0,
+            "label": "authentic",
+        }
+
+        for key, value in expected_message_without_time.items():
+            self.assertEqual(sent_message[key], value)
+
+        self.assertIn("created_at", sent_message)
+
+        self.database.save_prediction.assert_not_called()
 
     def test_get_predictions_returns_database_records(
         self,
