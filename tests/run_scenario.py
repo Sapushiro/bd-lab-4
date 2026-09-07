@@ -67,7 +67,7 @@ def main() -> None:
                 try:
                     error = run_scenario(client, scenario)
                 except Exception as exception:
-                    error = f"{scenario['name']: {exception}}"
+                    error = f"{scenario['name']}: {exception}"
 
                 if error is None:
                     print(f"PASS: {scenario['name']}")

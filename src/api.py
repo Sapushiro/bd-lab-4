@@ -6,8 +6,9 @@ from pydantic import BaseModel, ConfigDict
 
 from src.predict import Predictor
 from src.database import Database
+from src.kafka_producer import PredictionProducer
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 class BankNoteFeatures(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -39,6 +40,10 @@ app = FastAPI(
 )
 
 @lru_cache()
+def get_producer() -> PredictionProducer:
+    return PredictionProducer()
+
+@lru_cache()
 def get_predictor() -> Predictor:
     return Predictor()
 
@@ -58,7 +63,7 @@ def health() -> dict[str, str]:
 def predict(
         features: BankNoteFeatures,
         predictor: Annotated[Predictor, Depends(get_predictor)],
-        database: Annotated[Database, Depends(get_database)]
+        producer: Annotated[PredictionProducer, Depends(get_producer)]
 ) -> PredictionResponse:
     features_data = features.model_dump()
 
@@ -73,11 +78,14 @@ def predict(
 
     label = class_names[predicted_class]
 
-    database.save_prediction(
-        features=features_data,
-        prediction=predicted_class,
-        label=label
-    )
+    message = {
+        **features_data,
+        "prediction": predicted_class,
+        "label": label,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+
+    producer.send_prediction(message)
 
     return PredictionResponse(
         prediction=predicted_class,

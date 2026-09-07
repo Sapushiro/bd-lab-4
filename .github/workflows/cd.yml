@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 env:
-  API_IMAGE: sapushiro/banknote-api-lab3:latest
+  API_IMAGE: sapushiro/banknote-api-lab4:latest
 
 jobs:
   functional-tests:
@@ -63,6 +63,25 @@ jobs:
 
       - name: Show container status
         run: docker compose ps -a
+
+      - name: Verify Kafka
+        run: |
+          for attempt in {1..30}; do
+            if docker compose exec -T kafka \
+              /opt/kafka/bin/kafka-topics.sh \
+              --bootstrap-server localhost:9092 \
+              --list > /dev/null 2>&1; then
+              echo "Kafka is ready"
+              exit 0
+            fi
+
+            echo "Waiting for Kafka: attempt ${attempt}/30"
+            sleep 2
+          done
+
+          echo "Kafka did not become ready"
+          docker compose logs kafka
+          exit 1
 
       - name: Verify Vault
         run: |
@@ -120,6 +139,22 @@ jobs:
       - name: Show container logs
         if: failure()
         run: docker compose logs
+
+      - name: Save Kafka and Consumer logs
+        if: always()
+        run: |
+          docker compose logs kafka > kafka-logs.txt 2>&1
+          docker compose logs consumer > consumer-logs.txt 2>&1
+
+      - name: Upload container logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kafka-consumer-logs
+          path: |
+            kafka-logs.txt
+            consumer-logs.txt
+          if-no-files-found: warn
 
       - name: Stop application
         if: always()

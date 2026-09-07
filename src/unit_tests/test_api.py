@@ -3,15 +3,15 @@ from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
 
-from src.api import app, get_predictor, get_database
+from src.api import app, get_predictor, get_producer
 
 class TestAPI(unittest.TestCase):
     def setUp(self) -> None:
         self.predictor = Mock()
-        self.database = Mock()
+        self.producer = Mock()
 
         app.dependency_overrides[get_predictor] = lambda: self.predictor
-        app.dependency_overrides[get_database] = lambda: self.database
+        app.dependency_overrides[get_producer] = lambda: self.producer
 
         self.client = TestClient(app)
 
@@ -122,6 +122,27 @@ class TestAPI(unittest.TestCase):
 
         self.assertEqual(response.status_code, 422)
         self.predictor.predict.assert_not_called()
+
+    def test_predict_sends_message_to_producer(self):
+        self.predictor.predict.return_value = 0
+
+        response = self.client.post(
+            "/predict",
+            json=self.valid_features
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.producer.send_prediction.assert_called_once()
+
+        sent_message = self.producer.send_prediction.call_args.args[0]
+
+        self.assertEqual(sent_message["variance"], self.valid_features["variance"])
+        self.assertEqual(sent_message["skewness"], self.valid_features["skewness"])
+        self.assertEqual(sent_message["curtosis"], self.valid_features["curtosis"])
+        self.assertEqual(sent_message["entropy"], self.valid_features["entropy"])
+        self.assertEqual(sent_message["prediction"], 0)
+        self.assertEqual(sent_message["label"], "authentic")
+        self.assertIn("created_at", sent_message)
 
 
 if __name__ == "__main__":
